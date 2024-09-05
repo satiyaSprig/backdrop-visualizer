@@ -17,10 +17,12 @@
   "dependencies": {
     "@seregpie/k-means": "^2.0.1",
     "@seregpie/k-means-plus-plus": "^2.0.1",
+    "@types/json-diff": "^1.0.3",
     "@types/lodash": "^4.17.7",
     "@types/prompt-sync": "^4.2.3",
     "axios": "^1.7.7",
     "fflate": "^0.8.2",
+    "json-diff": "^1.0.6",
     "key-file-storage": "^2.3.3",
     "lodash": "^4.17.21",
     "open": "^8.0.0",

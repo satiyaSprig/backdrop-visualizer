@@ -10,6 +10,8 @@ import open from "open";
 import KMeans from "@seregpie/k-means-plus-plus";
 import { eventWithTime } from "rrweb";
 import { EventType } from "rrweb";
+import jsonDiff from "json-diff";
+import fs from "fs";
 
 let meansVector: {
   tag: string;
@@ -31,22 +33,32 @@ interface Snapshot {
 interface Backdrop {
   vector: number[];
   timestamp: number;
+  node: Snapshot;
 }
 
-const shouldIgnoreTag = (tag: string) => tag === 'script' || tag === 'noscript' || tag === 'meta' || tag === 'iframe';
- 
+const shouldIgnoreTag = (tag: string) =>
+  tag === "script" ||
+  tag === "noscript" ||
+  tag === "meta" ||
+  tag === "iframe" ||
+  tag === "head" ||
+  tag === "html" ||
+  tag === "style";
+
 const addElementToVector = (
   vector: number[],
   tag: string,
   classes?: string,
   style?: string,
-  src?: string,
+  src?: string
 ) => {
   const c = classes || "";
   const s = style || "";
   const sc = src || "";
   if (shouldIgnoreTag(tag)) return;
-  let index = meansVector.findIndex((v) => v.class === c && v.tag === tag && sc === v.src);
+  let index = meansVector.findIndex(
+    (v) => v.class === c && v.tag === tag && sc === v.src
+  );
   if (index < 0) {
     index = meansVector.length;
     meansVector.push({
@@ -75,7 +87,13 @@ class PageVector {
 
   private vectorize = (snap: Snapshot) => {
     if (snap.tagName) {
-      addElementToVector(this.vector, snap.tagName, snap.attributes?.class, snap.attributes?.style, snap.attributes?.src);
+      addElementToVector(
+        this.vector,
+        snap.tagName,
+        snap.attributes?.class,
+        snap.attributes?.style,
+        snap.attributes?.src
+      );
     }
     if (snap.childNodes) {
       snap.childNodes.forEach((c) => this.vectorize(c));
@@ -201,6 +219,7 @@ const getBackdrops = (blob: eventWithTime[]) => {
   return snaps.map((s) => ({
     timestamp: s.timestamp,
     vector: new PageVector(s.data.node as Snapshot).vector,
+    node: s.data.node as Snapshot,
   }));
 };
 
@@ -259,9 +278,9 @@ const processReplays = async (
   replays: ReplayWithEvents[]
 ) => {
   const chunked = chunk(replays, 20);
-  const backdrops: (Backdrop & {url: string })[] = [];
+  const backdrops: (Backdrop & { url: string })[] = [];
   const processedReplays: ReplayWithEvents[] = [];
-  console.log('Loading Replay Blobs...');
+  console.log("Loading Replay Blobs...");
   await Promise.all(
     chunked.map(async (c) => {
       await Promise.all(
@@ -274,10 +293,12 @@ const processReplays = async (
       );
     })
   );
-  console.log('Done Loading and Unzipping Replay Blobs');
+  console.log("Done Loading and Unzipping Replay Blobs");
   processedReplays.forEach((r) => {
     if (r.blob && r.url) {
-      getBackdrops(r.blob).forEach((b) => backdrops.push({ url: r.url as string, ...b }));
+      getBackdrops(r.blob).forEach((b) =>
+        backdrops.push({ url: r.url as string, ...b })
+      );
     }
   });
 
@@ -288,24 +309,29 @@ const processReplays = async (
   const results = KMeans(backdrops, 5, {
     map: (b) => b.vector,
   });
-  const sampled = results.map((r) => sample(r)).map((s) => ({ timestamp: s?.timestamp, url: s?.url }));
+  console.log("Clustering finished.");
+  const sampled = results.map((r) => sample(r));
+  sampled.forEach((s, i) => {
+    fs.writeFileSync(`./blobs/${i}.json`, JSON.stringify(s?.node));
+  });
+  const toSend = sampled.map((s) => ({ timestamp: s?.timestamp, url: s?.url }));
   console.log(sampled);
   open(
     `http://localhost:3000?replays=${encodeURIComponent(
-      btoa(JSON.stringify(sampled))
+      btoa(JSON.stringify(toSend))
     )}`
   );
 };
 
 const runWithToken = async (token: string) => {
   const id = Number(promptsync()("Survey ID:"));
-  console.log('Loading Replays...');
+  console.log("Loading Replays...");
   const replays = await getAllReplays(token, id);
   if (!replays) return false;
-  console.log('Done Loading Replays');
-  console.log('Loading Heatmap Events...');
+  console.log("Done Loading Replays");
+  console.log("Loading Heatmap Events...");
   const events = await getHeatmapEvents(token, id);
-  console.log('Done Loading Heatmap Events');
+  console.log("Done Loading Heatmap Events");
   const eventsByReplay = getEventsByReplay(replays, events);
   await processReplays(token, id, eventsByReplay);
   return true;
