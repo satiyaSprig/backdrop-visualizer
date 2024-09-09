@@ -27,6 +27,8 @@ interface Snapshot {
     style?: string;
     src?: string;
   };
+  textContent?: string;
+  isStyle?: boolean;
   childNodes?: Snapshot[];
 }
 
@@ -98,6 +100,41 @@ class PageVector {
     if (snap.childNodes) {
       snap.childNodes.forEach((c) => this.vectorize(c));
     }
+  };
+}
+
+class SimplifiedVector {
+  vector: number[] = [];
+  constructor(snap: Snapshot) {
+    this.vectorize(snap);
+  }
+
+  /**
+   * Vector dimensions to consider
+   * - total number of DOM nodes
+   * - max depth of the DOM tree
+   * - total length of text content
+   */
+  private vectorize = (snap: Snapshot) => {
+    let totalNodes = 0;
+    let maxDepth = 0;
+    let totalTextLength = 0;
+
+    const traverse = (node: Snapshot, depth: number) => {
+      totalNodes++;
+      maxDepth = Math.max(maxDepth, depth);
+      if (node.textContent && !node.isStyle) {
+        const skipCheck = node.textContent.includes("SCRIPT");
+        if (!skipCheck) {
+          totalTextLength += node.textContent.length;
+        }
+      }
+      if (node.childNodes) {
+        node.childNodes.forEach((c) => traverse(c, depth + 1));
+      }
+    };
+    traverse(snap, 0);
+    this.vector = [totalNodes, maxDepth, totalTextLength];
   };
 }
 
@@ -218,7 +255,7 @@ const getBackdrops = (blob: eventWithTime[]) => {
   const snaps = findFullSnapshots(blob as eventWithTime[]);
   return snaps.map((s) => ({
     timestamp: s.timestamp,
-    vector: new PageVector(s.data.node as Snapshot).vector,
+    vector: new SimplifiedVector(s.data.node as Snapshot).vector,
     node: s.data.node as Snapshot,
   }));
 };
